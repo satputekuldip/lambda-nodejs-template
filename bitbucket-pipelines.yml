@@ -1,0 +1,27 @@
+image: node:22-bullseye
+
+pipelines:
+    branches:
+        main:
+            - step:
+                  name: Build & Prepare Artifact (Node.js 22)
+                  oidc: true
+                  script:
+                      - npm install
+                      - apt-get update && apt-get install -y zip
+                      - zip -r lambda.zip .
+                  artifacts:
+                      - lambda.zip
+
+            - step:
+                  name: Deploy Lambda via OIDC Pipe
+                  oidc: true
+                  deployment: production
+                  script:
+                      - pipe: atlassian/aws-lambda-deploy:1.13.0
+                        variables:
+                            AWS_DEFAULT_REGION: $AWS_REGION
+                            AWS_OIDC_ROLE_ARN: $AWS_OIDC_ROLE_ARN
+                            FUNCTION_NAME: $LAMBDA_FUNCTION_NAME
+                            ZIP_FILE: "lambda.zip"
+                            COMMAND: "update"
