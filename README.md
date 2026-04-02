@@ -1,136 +1,152 @@
-# Lambda Node.js Template with Bitbucket CI/CD (OIDC)
+## Lambda: Kinesis User Logs Consumer
 
-This is a template for an AWS Lambda function running Node.js (ES Modules) using `serverless-http` to wrap an Express app. It includes a pre-configured Bitbucket Pipelines setup for automated deployment to AWS using OpenID Connect (OIDC) for secure, keyless authentication.
+This Lambda consumes records from the Kinesis stream `event-logger-event-stream` and writes them into the `user_logs` table in Postgres. Invalid or failed records are sent to an SQS DLQ for later analysis.
 
-## Project Structure
+### Handler
 
+- Runtime: Node.js 18+
+- Handler: `index.handler`
+
+### Event Source
+
+- Kinesis stream ARN: `arn:aws:kinesis:ap-south-1:591815746004:stream/event-logger-event-stream`
+- Suggested mapping settings:
+    - Batch size: `1000`
+    - Starting position: `LATEST`
+    - Split batch on error: `false`
+    - Report batch item failures: `false`
+
+Each Kinesis record must contain a base64-encoded JSON body matching the `user_logs` table structure, for example:
+
+```json
+{
+	"ip": "192.168.1.3",
+	"zl_uid": "asdasdas",
+	"source": "ecommerce",
+	"source_type": "user",
+	"source_id": 1,
+	"source_name": "source name",
+	"event": "login",
+	"unit": "boolean",
+	"value": "true",
+	"meta": { "device": "ios", ... },
+	"sub_source_id": "chapter_1",
+	"sub_source_name": "Chapter 1",
+	"sub_source": "chapter",
+	"remarks": { "note": "first login", ... },
+	"activity_start": "2025-01-01 10:00:00",
+	"activity_end": "2025-01-01 10:05:00",
+	"created_at": "2025-01-01 10:05:00"
+}
 ```
-├── config/             # Database and app configuration
-├── functions/          # Business logic and route handlers
-├── utils/              # Utility functions (e.g., standard responses)
-├── index.mjs           # Lambda entry point (Express app wrapper)
-├── bitbucket-pipelines.yml # CI/CD configuration
-├── deploy-lambda.sh    # Script for manual deployment/packaging
-└── package.json        # Dependencies and scripts
-```
 
-## Prerequisites
+### Environment Variables
 
--   **Node.js** (v20+ recommended)
--   **AWS Account**
--   **Bitbucket Repository**
--   **AWS CLI** (optional, for manual deployment)
+- `ACCOUNTS_DB_HOST`, `ACCOUNTS_DB_PORT`, `ACCOUNTS_DB_USERNAME`, `ACCOUNTS_DB_PASSWORD`, `ACCOUNTS_DB_DATABASE` – Postgres connection for `user_logs`.
+- `DLQ_QUEUE_URL` – SQS queue URL where failed records are sent.
 
-## Local Setup
-
-1.  **Install Dependencies:**
-    ```bash
-    npm install
-    ```
-
-2.  **Environment Variables:**
-    Copy `.env.example` to `.env` and configure your local variables.
-    ```bash
-    cp .env.example .env
-    ```
-
-3.  **Run Locally:**
-    Since this is a standard Express app wrapped for Lambda, you can add a local server script if needed, or test functions individually.
-
-## Manual Deployment
-
-You can package the application for manual upload using the included script:
+### Local Build
 
 ```bash
-chmod +x deploy-lambda.sh
-./deploy-lambda.sh
+npm install
+npm run build
 ```
 
-This creates a `lambda.zip` file which you can upload via the AWS Console or AWS CLI.
+### Testing
 
----
+Unit tests cover parsing, deduplication, bulk insert query building, and DLQ payload shape.
 
-## Setting up Bitbucket Pipelines with AWS OIDC
+```bash
+npm test
+```
 
-This project is configured to use OpenID Connect (OIDC) to authenticate with AWS. This allows Bitbucket Pipelines to deploy to your AWS account without storing long-term Access Keys / Secret Keys.
+### Failure Handling & Deduplication
 
-### Step 1: Get OIDC Info from Bitbucket
+- Records are decoded and parsed individually. Any per-record error is logged and sent to DLQ, while the batch continues.
+- Valid records are deduplicated in-memory within the Lambda invocation using a composite key (`zl_uid|event|source|source_type|source_id|unit|value|sub_source...|created_at`).
+- Insertions are performed via bulk multi-row `INSERT`. If bulk insert fails, the Lambda falls back to per-row insertion to isolate failing records and send those to DLQ.
+- **Resilience**: Lambda always returns success (does not throw) even if DLQ send fails. DLQ failures are logged but don't stop processing. This ensures Kinesis doesn't retry the batch and cause duplicates.
+- By handling all failures gracefully and never throwing, the Lambda prevents Kinesis from redelivering the same batch repeatedly.
 
-1.  Go to your **Bitbucket Repository**.
-2.  Navigate to **Repository Settings** > **OpenID Connect** (under Pipelines).
-3.  Note down the **Identity provider URL** and **Audience**.
-    *   *URL Example:* `https://api.bitbucket.org/2.0/workspaces/my-workspace/pipelines-config/identity/oidc`
-    *   *Audience Example:* `ari:cloud:bitbucket::workspace/my-workspace`
+### CloudWatch EMF Metrics
 
-### Step 2: Create Identity Provider in AWS
+This service emits **Embedded Metric Format (EMF)** logs for all critical stages so you can measure throughput, success/failure, and pinpoint bottlenecks.
 
-1.  Log in to the **AWS Console** and go to **IAM**.
-2.  Click **Identity providers** > **Add provider**.
-3.  Select **OpenID Connect**.
-4.  **Provider URL**: Paste the *Identity provider URL* you copied from Bitbucket. Click "Get thumbprint".
-5.  **Audience**: Paste the *Audience* from Bitbucket.
-6.  Click **Add provider**.
+#### Namespace
 
-### Step 3: Create IAM Role for Deployment
+- `ZebraLearn/LambdaEventLogsConsumerDb` (override with `METRICS_NAMESPACE`)
 
-1.  In **IAM**, go to **Roles** > **Create role**.
-2.  Select **Web identity**.
-3.  **Identity provider**: Select the provider you just created.
-4.  **Audience**: Select the audience you added.
-5.  Click **Next**.
-6.  **Permissions**: Add policies required for your deployment. For this template, you typically need:
-    *   `AWSLambdaBasicExecutionRole` (logging)
-    *   Permission to update your specific Lambda function code:
-        ```json
-        {
-            "Version": "2012-10-17",
-            "Statement": [
-                {
-                    "Effect": "Allow",
-                    "Action": [
-                        "lambda:UpdateFunctionCode",
-                        "lambda:GetFunctionConfiguration"
-                    ],
-                    "Resource": "arn:aws:lambda:YOUR_REGION:YOUR_ACCOUNT_ID:function:YOUR_FUNCTION_NAME"
-                }
-            ]
-        }
-        ```
-7.  Click **Next**, name the role (e.g., `BitbucketPipelinesDeployRole`), and create it.
+#### Standard Dimensions
 
-### Step 4: Refine Trust Relationship (Optional but Recommended)
+Each metric event includes these dimensions by default:
 
-To ensure only *this* specific repository can deploy using this role:
+- `Service`
+- `FunctionName`
+- `Environment`
+- `Scope` (`kinesis`, `sqs`, `validation`)
+- `Operation` (`request`, `single_ingest`, `bulk_ingest`, `dedupe`, `batch_summary`, `send_dlq_message`)
+- `Outcome`
 
-1.  Click on the Role you just created.
-2.  Go to the **Trust relationships** tab > **Edit trust policy**.
-3.  Update the `Condition` to match your repository UUID (you can find the repository UUID in the Bitbucket OIDC settings page or URL).
-    ```json
-    "Condition": {
-        "StringLike": {
-             "api.bitbucket.org/2.0/workspaces/YOUR_WORKSPACE/pipelines-config/identity/oidc:sub": "{YOUR_REPO_UUID}:*"
-        }
-    }
-    ```
+Additional dimensions are included where relevant:
 
-### Step 5: Configure Bitbucket Repository Variables
+- `Route`
+- `Method`
+- `HttpStatus`
+- `StatusClass`
+- `ErrorType`
+- `ErrorScope`
+- `Reason`
+- `MessageType`
 
-1.  Go to your **Bitbucket Repository** > **Repository Settings** > **Repository variables** (under Pipelines).
-2.  Add the following variables:
+#### Key Metrics
 
-    | Name | Value | Description |
-    |------|-------|-------------|
-    | `AWS_REGION` | `us-east-1` (or your region) | AWS Region where the Lambda exists |
-    | `AWS_OIDC_ROLE_ARN` | `arn:aws:iam::123456789:role/BitbucketPipelinesDeployRole` | ARN of the IAM Role created in Step 3 |
-    | `LAMBDA_FUNCTION_NAME`| `my-lambda-function` | Name of the destination Lambda function |
+- Request and batch health: `Requests`, `RecordsReceived`, `Success`, `Failure`, `Errors`, `BatchProcessingLatencyMs`
+- Parsing: `ParseAttemptCount`, `ParseSuccessCount`, `ParseFailureCount`, `MissingDataCount`, `DecodeFailureCount`
+- Dedupe: `DedupeInputCount`, `DedupeOutputCount`, `DuplicatesRemovedCount`, `RecordsDeduped`
+- DB write path: `DbBulkInsertAttemptCount`, `DbBulkInsertSuccessCount`, `DbBulkInsertFailureCount`, `RecordsBulkInserted`, `DbBulkInsertLatencyMs`, `DbInsertSuccessCount`, `DbInsertFailureCount`, `DbInsertLatencyMs`
+- Fallback path: `FallbackInsertAttemptCount`, `FallbackInsertSuccessCount`, `FallbackInsertFailureCount`, `RecordsInsertedFallback`
+- DLQ path: `DlqAttemptCount`, `DlqSuccessCount`, `DlqFailureCount`, `DlqConfigurationFailureCount`, `DlqDispatchFailureCount`
 
-### Step 6: Deploy
+### Suggested CloudWatch Dashboard
 
-1.  Commit and push your changes to the `main` branch.
-2.  Navigate to **Pipelines** in Bitbucket to watch the deployment status.
+Build widgets in the EMF namespace grouped by dimensions:
 
-The pipeline will:
-1.  Install dependencies.
-2.  Zip the application.
-3.  Authenticate via OIDC using the assumed role.
-4.  Deploy the zip file to your AWS Lambda function.
+1. **Traffic & Load**
+    - `Requests`, `RecordsReceived`
+    - Split by `Service`, `Environment`, `FunctionName`, `Scope`, `Operation`
+
+2. **Batch Reliability**
+    - `Success`, `Failure`, `Errors`, `RecordsProcessedSuccess`, `RecordsProcessedFailure`
+    - Split by `Scope=kinesis`, `Operation=batch_summary`, `Outcome`
+
+3. **Parser Health**
+    - `ParseAttemptCount`, `ParseSuccessCount`, `ParseFailureCount`, `MissingDataCount`, `DecodeFailureCount`
+    - Split by `Scope=validation`, `Operation`, `ErrorType`, `Reason`
+
+4. **Dedupe Efficiency**
+    - `DedupeInputCount`, `DedupeOutputCount`, `DuplicatesRemovedCount`
+    - Split by `Scope=kinesis`, `Operation=dedupe`
+
+5. **DB Performance**
+    - `DbBulkInsertLatencyMs`, `DbInsertLatencyMs`, `DbBulkInsertFailureCount`, `DbInsertFailureCount`
+    - Split by `Scope=kinesis`, `Operation`, `Outcome`, `ErrorType`
+
+6. **DLQ Reliability**
+    - `DlqAttemptCount`, `DlqSuccessCount`, `DlqFailureCount`, `DlqConfigurationFailureCount`
+    - Split by `Scope=sqs`, `Operation=send_dlq_message`, `ErrorType`, `Reason`
+
+With this structure you can quickly answer:
+
+- Is traffic increasing?
+- Are failures parse-related, DB-related, or DLQ-related?
+- Are bulk inserts slowing down?
+- Is fallback insert compensating or failing?
+
+### DLQ Message Schema
+
+DLQ payloads conform to a shared structure across lambdas via `SqsErrorMessage`:
+
+- `type` and `scope` identify error class and lambda scope.
+- `region`, `timestamp`, `path`, `method`, `headers` provide context.
+- `body` contains the parsed payload (if available).
+- `details` include `message`, normalized `error`, and payload previews with Kinesis metadata.

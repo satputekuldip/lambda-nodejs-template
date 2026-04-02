@@ -1,0 +1,7 @@
+{
+  "version": 3,
+  "sources": ["../../../../../../../../private/var/folders/rl/v83hg3hs0wdc233m1gb5z7nm0000gn/T/tmp4vos5ohy/index.ts"],
+  "sourcesContent": ["import { APIGatewayProxyEvent, APIGatewayProxyResult } from \"aws-lambda\";\n\nexport const handler = async (\n\tevent: APIGatewayProxyEvent,\n): Promise<APIGatewayProxyResult> => {\n\tlet response: APIGatewayProxyResult;\n\ttry {\n\t\tresponse = {\n\t\t\tstatusCode: 200,\n\t\t\tbody: JSON.stringify({\n\t\t\t\tmessage: \"hello SAM\",\n\t\t\t}),\n\t\t};\n\t} catch (err) {\n\t\tconsole.log(err);\n\t\tresponse = {\n\t\t\tstatusCode: 500,\n\t\t\tbody: JSON.stringify({\n\t\t\t\tmessage: \"some error happened\",\n\t\t\t}),\n\t\t};\n\t}\n\n\treturn response;\n};\n"],
+  "mappings": "yaAAA,IAAAA,EAAA,GAAAC,EAAAD,EAAA,aAAAE,IAAA,eAAAC,EAAAH,GAEO,IAAME,EAAU,MACtBE,GACoC,CACpC,IAAIC,EACJ,GAAI,CACHA,EAAW,CACV,WAAY,IACZ,KAAM,KAAK,UAAU,CACpB,QAAS,WACV,CAAC,CACF,CACD,OAASC,EAAK,CACb,QAAQ,IAAIA,CAAG,EACfD,EAAW,CACV,WAAY,IACZ,KAAM,KAAK,UAAU,CACpB,QAAS,qBACV,CAAC,CACF,CACD,CAEA,OAAOA,CACR",
+  "names": ["index_exports", "__export", "handler", "__toCommonJS", "event", "response", "err"]
+}

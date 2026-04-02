@@ -4,13 +4,19 @@
 
 echo "Starting Lambda deployment process..."
 
-# Create deployment package
-echo "Creating deployment package..."
+# Install production dependencies and build TypeScript
+echo "Installing production dependencies..."
 npm install --production
 
-# Create zip file for Lambda excluding lambda.zip if it exists
-echo "Creating zip file..."
-zip -r lambda.zip . -x lambda.zip
+echo "Building TypeScript sources..."
+npm run build
+
+# Create zip file for Lambda from compiled output and dependencies
+echo "Creating zip file from dist/ and node_modules..."
+cd dist
+zip -r ../lambda.zip .
+cd ..
+zip -r lambda.zip node_modules -x lambda.zip
 
 # Optional: Deploy to AWS Lambda (uncomment and configure as needed)
 # echo "Deploying to AWS Lambda..."

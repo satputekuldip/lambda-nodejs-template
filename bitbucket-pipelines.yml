@@ -7,9 +7,15 @@ pipelines:
                   name: Build & Prepare Artifact (Node.js 22)
                   oidc: true
                   script:
-                      - npm install
+                      - npm ci
+                      - npm run build
+                      - npm prune --production
                       - apt-get update && apt-get install -y zip
-                      - zip -r lambda.zip .
+                      - mkdir -p package
+                      - cp -r dist/* package/
+                      - cp package.json package-lock.json package/
+                      - cp -r node_modules package/
+                      - cd package && zip -r ../lambda.zip . && cd ..
                   artifacts:
                       - lambda.zip
 
@@ -23,5 +29,34 @@ pipelines:
                             AWS_DEFAULT_REGION: $AWS_REGION
                             AWS_OIDC_ROLE_ARN: $AWS_OIDC_ROLE_ARN
                             FUNCTION_NAME: $LAMBDA_FUNCTION_NAME
+                            ZIP_FILE: "lambda.zip"
+                            COMMAND: "update"
+        staging:
+            - step:
+                  name: Build & Prepare Artifact (Node.js 22)
+                  oidc: true
+                  script:
+                      - npm ci
+                      - npm run build
+                      - npm prune --production
+                      - apt-get update && apt-get install -y zip
+                      - mkdir -p package
+                      - cp -r dist/* package/
+                      - cp package.json package-lock.json package/
+                      - cp -r node_modules package/
+                      - cd package && zip -r ../lambda.zip . && cd ..
+                  artifacts:
+                      - lambda.zip
+
+            - step:
+                  name: Deploy Lambda via OIDC Pipe
+                  oidc: true
+                  deployment: production
+                  script:
+                      - pipe: atlassian/aws-lambda-deploy:1.13.0
+                        variables:
+                            AWS_DEFAULT_REGION: $AWS_REGION
+                            AWS_OIDC_ROLE_ARN: $AWS_OIDC_ROLE_ARN
+                            FUNCTION_NAME: $STAGING_LAMBDA_FUNCTION_NAME
                             ZIP_FILE: "lambda.zip"
                             COMMAND: "update"

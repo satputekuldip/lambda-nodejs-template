@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+    Sample SAM Template for a Hello World Lambda function
+
+# Global settings for all functions in this template
+Globals:
+    Function:
+        Timeout: 3
+        MemorySize: 128
+
+Resources:
+    HelloWorldFunction:
+        Type: AWS::Serverless::Function
+        Properties:
+            CodeUri: ./ # Folder containing index.ts and package.json
+            Handler: index.handler # Exports from index.ts
+            Runtime: nodejs22.x
+            Architectures:
+                - x86_64
+            Environment:
+                Variables:
+                    NODE_OPTIONS: --enable-source-maps # Enables TS stack traces in logs
+        Metadata:
+            BuildMethod: esbuild
+            BuildProperties:
+                Minify: true
+                Target: "es2020"
+                Sourcemap: true
+                EntryPoints:
+                    - index.ts
