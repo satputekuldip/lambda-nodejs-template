@@ -1,5 +1,21 @@
 {
-	"foo": "bar",
-	"baz": 42,
-	"test": true
+	"resource": "/",
+	"path": "/",
+	"httpMethod": "GET",
+	"headers": {
+		"Content-Type": "application/json"
+	},
+	"multiValueHeaders": {},
+	"queryStringParameters": null,
+	"multiValueQueryStringParameters": null,
+	"pathParameters": {
+		"id": "id1"
+	},
+	"requestContext": {
+		"resourcePath": "/",
+		"httpMethod": "GET",
+		"path": "/"
+	},
+	"body": null,
+	"isBase64Encoded": false
 }

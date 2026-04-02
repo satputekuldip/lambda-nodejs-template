@@ -14,6 +14,7 @@
 	"include": [
 		"index.ts",
 		"config/**/*.ts",
+		"controllers/**/*.ts",
 		"functions/**/*.ts",
 		"errors/**/*.ts",
 		"services/**/*.ts",

@@ -1,25 +1,22 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from "aws-lambda";
+import express from "express";
+import type { Request, Response, NextFunction } from "express";
+import serverless from "serverless-http";
+import { pdf_stream } from "./controllers/pdf-controller.js";
 
-export const handler = async (
-	event: APIGatewayProxyEvent,
-): Promise<APIGatewayProxyResult> => {
-	let response: APIGatewayProxyResult;
-	try {
-		response = {
-			statusCode: 200,
-			body: JSON.stringify({
-				message: "hello SAM",
-			}),
-		};
-	} catch (err) {
-		console.log(err);
-		response = {
-			statusCode: 500,
-			body: JSON.stringify({
-				message: "some error happened",
-			}),
-		};
-	}
+const app = express();
 
-	return response;
-};
+// Base JSON parsing for API Gateway/ALB requests.
+app.use(express.json());
+
+// Healthcheck route.
+app.get("/", pdf_stream);
+
+app.post("/pdf-stream", pdf_stream);
+
+// Global error handler.
+app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+	console.error(err);
+	return res.status(500).json({ message: "Internal Server Error" });
+});
+
+export const handler = serverless(app);
